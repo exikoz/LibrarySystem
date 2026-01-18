@@ -3,8 +3,9 @@ using System.IO;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using LibrarySystem.Models;
 
-namespace LibrarySystem.Models;
+namespace LibrarySystem.Data;
 
 public partial class LibrarySystemDbContext : DbContext
 {
@@ -76,6 +77,7 @@ public partial class LibrarySystemDbContext : DbContext
 
         modelBuilder.Entity<Loan>(entity =>
         {
+            entity.ToTable(tb => tb.HasTrigger("trg_UpdateAvailability"));
             entity.HasKey(e => e.Id).HasName("Pk_Loans");
 
             entity.HasOne(d => d.BookCopy).WithMany(p => p.Loans)
