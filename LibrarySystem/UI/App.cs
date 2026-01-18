@@ -1,4 +1,6 @@
+using LibrarySystem.Data;
 using LibrarySystem.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace LibrarySystem.UI
 {
@@ -249,7 +251,86 @@ namespace LibrarySystem.UI
 
         private void ShowAdvancedMenu()
         {
-            Console.WriteLine("\n[Advanced Features]");
+            while (true)
+            {
+                Console.Clear();
+                Console.WriteLine("=== ADVANCED FEATURES (VG) ===");
+                Console.WriteLine("1. Simulate Concurrency Conflict (RowVersion)");
+                Console.WriteLine("0. Back");
+                Console.Write("Select: ");
+
+                var input = Console.ReadLine();
+                switch (input)
+                {
+                    case "1":
+                        SimulateConcurrency();
+                        break;
+                    case "0":
+                        return;
+                    default:
+                        Console.ReadKey();
+                        break;
+                }
+            }
+        }
+
+        private void SimulateConcurrency()
+        {
+            Console.WriteLine("\n--- Concurrency Simulation ---");
+            Console.WriteLine("This test demonstrates Optimistic Concurrency using RowVersion.");
+            Console.WriteLine("We will simulate two users (User A and User B) trying to modify the SAME book copy simultaneously.");
+
+            Console.Write("Enter Book Copy ID to test (e.g., from 'Active Loans' or 'Search'): ");
+            if (!int.TryParse(Console.ReadLine(), out int copyId))
+            {
+                Console.WriteLine("Invalid ID.");
+                Console.ReadKey();
+                return;
+            }
+
+            try
+            {
+                // User A retrieves the record
+                using var contextA = new LibrarySystemDbContext();
+                var copyA = contextA.BookCopies.Find(copyId);
+                if (copyA == null) { Console.WriteLine("Copy not found."); return; }
+                
+                Console.WriteLine($"[User A] retrieved copy {copyId}. Availability: {copyA.IsAvailAble}");
+
+                // User B retrieves the SAME record
+                using var contextB = new LibrarySystemDbContext();
+                var copyB = contextB.BookCopies.Find(copyId);
+                Console.WriteLine($"[User B] retrieved copy {copyId}. Availability: {copyB.IsAvailAble}");
+
+                // User A modifies it
+                copyA.IsAvailAble = !copyA.IsAvailAble; // Flip status
+                Console.WriteLine("[User A] modifies availability...");
+                
+                Thread.Sleep(1000); // Simulate think time
+                
+                contextA.SaveChanges();
+                Console.WriteLine("[User A] saved changes successfully!");
+
+                // User B modifies the OLD version they have
+                copyB.IsAvailAble = !copyB.IsAvailAble; // Flip status
+                Console.WriteLine("[User B] tries to modify availability...");
+                
+                contextB.SaveChanges(); // This should FAIL
+                Console.WriteLine("[User B] Saved changes (Unexpected code path).");
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                Console.WriteLine("\n[SUCCESS] Concurrency Conflict Detected!");
+                Console.WriteLine("System blocked User B's save because the data was modified by User A in the meantime.");
+                Console.WriteLine("This proves RowVersion is working.");
+                // ex.Entries would presumably contain the object in conflict
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error: {ex.Message}");
+            }
+
+            Console.WriteLine("\nPress any key to continue...");
             Console.ReadKey();
         }
     }
