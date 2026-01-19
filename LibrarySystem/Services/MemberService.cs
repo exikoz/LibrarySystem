@@ -1,35 +1,40 @@
-using LibrarySystem.Data;
 using LibrarySystem.Models;
-using System;
-using System.Linq;
+using LibrarySystem.Services.Validation;
+using LibrarySystem.Services.Interfaces;
+using LibrarySystem.Data.Repositories.Interfaces;
 
 namespace LibrarySystem.Services
 {
     public class MemberService : IMemberService
     {
-        private readonly LibrarySystemDbContext _context;
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly IValidator _validator;
 
-        public MemberService()
+        public MemberService(IUnitOfWork unitOfWork, IValidator validator)
         {
-            _context = new LibrarySystemDbContext();
+            _unitOfWork = unitOfWork;
+            _validator = validator;
         }
 
-        public void RegisterMember(string firstName, string lastName, string email, string memberNumber)
+        public void RegisterMember(string firstName, string lastName, string email)
         {
+            if (!_validator.IsValidEmail(email)) throw new ArgumentException("Invalid Email.");
+
             // 1. Validate Uniqueness
-            if (_context.Members.Any(m => m.Email == email))
+            if (_unitOfWork.Members.EmailExists(email))
             {
                 Console.WriteLine($"Error: A member with email '{email}' already exists.");
                 return;
             }
 
-            if (_context.Members.Any(m => m.MemberNumber == memberNumber))
+            // 2. Auto-Generate Member Number
+            string memberNumber;
+            do
             {
-                Console.WriteLine($"Error: Member number '{memberNumber}' is already taken.");
-                return;
-            }
-
-            // 2. Create Member
+                memberNumber = $"MEM-{Guid.NewGuid().ToString().Substring(0, 6).ToUpper()}";
+            } while (_unitOfWork.Members.MemberNumberExists(memberNumber));
+            
+            // 3. Create Member
             var member = new Member
             {
                 FirstName = firstName,
@@ -39,27 +44,15 @@ namespace LibrarySystem.Services
                 CreatedAt = DateTime.Now
             };
 
-            _context.Members.Add(member);
-            _context.SaveChanges();
+            _unitOfWork.Members.Add(member);
+            _unitOfWork.Complete();
 
             Console.WriteLine($"Successfully registered member: {firstName} {lastName} ({memberNumber})");
         }
 
-        public void ListMembers()
+        public IEnumerable<Member> ListMembers()
         {
-            var members = _context.Members.ToList();
-            if (members.Any())
-            {
-                Console.WriteLine("\n--- Current Members ---");
-                foreach (var m in members)
-                {
-                    Console.WriteLine($"ID: {m.Id} | {m.FirstName} {m.LastName} | {m.Email} | No: {m.MemberNumber}");
-                }
-            }
-            else
-            {
-                Console.WriteLine("No members found.");
-            }
+            return _unitOfWork.Members.GetAll();
         }
     }
 }

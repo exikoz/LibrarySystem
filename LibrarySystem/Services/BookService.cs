@@ -1,29 +1,32 @@
-using LibrarySystem.Data;
 using LibrarySystem.Models;
-using Microsoft.EntityFrameworkCore;
-using System;
-using System.Linq;
+using LibrarySystem.Services.Validation;
+using LibrarySystem.Services.Interfaces;
+using LibrarySystem.Data.Repositories.Interfaces;
 
 namespace LibrarySystem.Services
 {
     public class BookService : IBookService
     {
-        private readonly LibrarySystemDbContext _context;
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly IValidator _validator;
 
-        public BookService()
+        public BookService(IUnitOfWork unitOfWork, IValidator validator)
         {
-            _context = new LibrarySystemDbContext();
+            _unitOfWork = unitOfWork;
+            _validator = validator;
         }
 
-        public void AddBook(string title, string isbn, int year, string authorName)
+        public void AddBook(string title, string isbn, int year, string authorName, int copies = 1)
         {
+            if (!_validator.IsValidISBN(isbn)) throw new ArgumentException("Invalid ISBN.");
+            if (!_validator.IsValidYear(year)) throw new ArgumentException("Invalid Year.");
+
             // 1. Find or Create Author
-            var author = _context.Authors.FirstOrDefault(a => a.Name == authorName);
+            var author = _unitOfWork.Books.GetAuthorByName(authorName);
             if (author == null)
             {
                 author = new Author { Name = authorName };
-                _context.Authors.Add(author);
-                // We don't save yet, we can save everything at once when adding the book
+                _unitOfWork.Books.AddAuthor(author);
             }
 
             // 2. Create Book
@@ -32,58 +35,54 @@ namespace LibrarySystem.Services
                 Title = title,
                 Isbn = isbn,
                 PublishedYear = year,
-                Author = author // EF Core will handle the relationship (and Author creation if new)
+                Author = author
             };
 
-            _context.Books.Add(book);
-            _context.SaveChanges();
+            _unitOfWork.Books.AddBook(book);
 
-            Console.WriteLine($"Successfully added '{title}' by {authorName}.");
-            
-            // Optional: Add a copy automatically? The requirements say "Registrera nya böcker", usually implies adding the title to the catalog.
-            // Managing copies might be a separate step or part of this. Let's keep it simple for now: Catalog entry.
-         }
-
-        public void SearchBooks(string searchTerm)
-        {
-            var books = _context.Books
-                .Include(b => b.Author)
-                .Where(b => b.Title.Contains(searchTerm) || b.Author.Name.Contains(searchTerm) || b.Isbn.Contains(searchTerm))
-                .ToList();
-
-            if (books.Any())
+            // 3. Add Copies
+            for (int i = 0; i < copies; i++)
             {
-                Console.WriteLine($"\nFound {books.Count} book(s):");
-                foreach (var book in books)
-                {
-                    Console.WriteLine($"- ID: {book.Id} | {book.Title} ({book.PublishedYear}) by {book.Author.Name} [ISBN: {book.Isbn}]");
-                }
+                _unitOfWork.Books.AddCopy(new BookCopy { Book = book, IsAvailAble = true });
             }
-            else
-            {
-                Console.WriteLine("\nNo books found matching your search.");
-            }
+
+            _unitOfWork.Complete();
+
+            Console.WriteLine($"Successfully added '{title}' by {authorName} with {copies} copies.");
         }
 
-        public void ListBookCopies(int bookId)
+        public void AddCopies(int bookId, int count)
         {
-            var copies = _context.BookCopies
-                .Where(bc => bc.BookId == bookId)
-                .ToList();
+             // Verify book exists explicitly
+             var book = _unitOfWork.Books.GetBookById(bookId);
+             if (book == null)
+             {
+                 Console.WriteLine($"Error: Book with ID {bookId} does not exist.");
+                 return;
+             }
+             
+             // Create copies
+             for (int i = 0; i < count; i++)
+             {
+                 _unitOfWork.Books.AddCopy(new BookCopy { BookId = bookId, IsAvailAble = true });
+             }
+             _unitOfWork.Complete();
+             Console.WriteLine($"Successfully added {count} copies to Book {bookId} ('{book.Title}').");
+        }
 
-            if (copies.Any())
-            {
-                Console.WriteLine($"\nCopies for Book ID {bookId}:");
-                foreach (var copy in copies)
-                {
-                    string status = copy.IsAvailAble ? "Available" : "Loaned Out";
-                    Console.WriteLine($"- Copy ID: {copy.Id} | Status: {status}");
-                }
-            }
-            else
-            {
-                Console.WriteLine("No copies found for this book.");
-            }
+        public IEnumerable<Book> GetAllBooks()
+        {
+            return _unitOfWork.Books.GetAll();
+        }
+
+        public IEnumerable<Book> SearchBooks(string searchTerm)
+        {
+            return _unitOfWork.Books.Search(searchTerm);
+        }
+
+        public IEnumerable<BookCopy> GetCopies(int bookId)
+        {
+            return _unitOfWork.Books.GetCopies(bookId);
         }
     }
 }
