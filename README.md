@@ -74,6 +74,8 @@ We implemented **Optimistic Locking** using a `RowVersion` column.
 
 ### 4.2 Performance Improvements (SQL Lab)
 We improved execution time by using **Indexes**.
+<img width="1326" height="669" alt="image" src="https://github.com/user-attachments/assets/faafb43d-93ed-4ff9-8ca4-518abcf8aee8" />
+
 
 *   **Scenario**: Searching for a Book.
 *   **Before (Scan)**: Without an index, SQL Server has to check *every single row* in the table to find a book (like reading every page of a book to find a word).
